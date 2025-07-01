@@ -33,6 +33,8 @@ def register_manage_gameobject_tools(mcp: FastMCP):
         find_all: bool = False,
         search_in_children: bool = False,
         search_inactive: bool = False,
+        case_sensitive: bool = False,  # Case-sensitive search option
+        exact_match: bool = False,  # Force exact match instead of smart search
         # -- Component Management Arguments --
         component_name: str = None,
     ) -> Dict[str, Any]:
@@ -58,7 +60,16 @@ def register_manage_gameobject_tools(mcp: FastMCP):
             components_to_add: List of component names to add.
             Action-specific arguments (e.g., position, rotation, scale for create/modify;
                      component_name for component actions;
-                     search_term, find_all for 'find').
+                     search_term, find_all, case_sensitive, exact_match for 'find').
+            
+            Smart Wildcard Search (Default):
+                - Automatically adds wildcards for flexible searching
+                - "Player" becomes "*Player*" → matches PlayerController, MyPlayer, NPCPlayer
+                - Explicit wildcards work as expected:
+                  - '*' for zero or more characters: "Player*" matches "PlayerController", "PlayerMovement"
+                  - '?' for single character: "Enemy?" matches "Enemy1", "Enemy2" 
+                  - Examples: "*Controller", "UI_*_Panel"
+                - Set exact_match=True to force exact name matching only
 
         Returns:
             Dictionary with operation results ('success', 'message', 'data').
@@ -91,6 +102,8 @@ def register_manage_gameobject_tools(mcp: FastMCP):
                 "findAll": find_all,
                 "searchInChildren": search_in_children,
                 "searchInactive": search_inactive,
+                "caseSensitive": case_sensitive,
+                "exactMatch": exact_match,
                 "componentName": component_name
             }
             params = {k: v for k, v in params.items() if v is not None}

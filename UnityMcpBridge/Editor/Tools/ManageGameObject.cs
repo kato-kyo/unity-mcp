@@ -17,6 +17,92 @@ namespace UnityMcpBridge.Editor.Tools
     /// </summary>
     public static class ManageGameObject
     {
+        /// <summary>
+        /// Helper class for wildcard pattern matching without using Regex
+        /// </summary>
+        private static class WildcardSearchHelper
+        {
+            /// <summary>
+            /// Checks if a string contains wildcard characters (* or ?)
+            /// </summary>
+            public static bool IsWildcardPattern(string pattern)
+            {
+                return !string.IsNullOrEmpty(pattern) && 
+                       (pattern.Contains('*') || pattern.Contains('?'));
+            }
+            
+            /// <summary>
+            /// Performs wildcard pattern matching (case-insensitive by default)
+            /// </summary>
+            public static bool Match(string text, string pattern, bool caseSensitive = false)
+            {
+                if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(pattern))
+                    return text == pattern;
+                
+                if (!IsWildcardPattern(pattern))
+                {
+                    return caseSensitive 
+                        ? string.Equals(text, pattern) 
+                        : string.Equals(text, pattern, StringComparison.OrdinalIgnoreCase);
+                }
+                
+                return WildcardMatchInternal(text, pattern, caseSensitive);
+            }
+            
+            /// <summary>
+            /// Internal wildcard matching implementation using finite state machine approach
+            /// </summary>
+            private static bool WildcardMatchInternal(string text, string pattern, bool caseSensitive)
+            {
+                int textIndex = 0;
+                int patternIndex = 0;
+                int starIndex = -1;
+                int match = 0;
+
+                while (textIndex < text.Length)
+                {
+                    if (patternIndex < pattern.Length)
+                    {
+                        char patternChar = pattern[patternIndex];
+                        char textChar = text[textIndex];
+                        
+                        if (patternChar == '?' || 
+                            (caseSensitive ? patternChar == textChar : 
+                             char.ToLower(patternChar) == char.ToLower(textChar)))
+                        {
+                            textIndex++;
+                            patternIndex++;
+                            continue;
+                        }
+                        
+                        if (patternChar == '*')
+                        {
+                            starIndex = patternIndex;
+                            match = textIndex;
+                            patternIndex++;
+                            continue;
+                        }
+                    }
+                    
+                    if (starIndex != -1)
+                    {
+                        patternIndex = starIndex + 1;
+                        match++;
+                        textIndex = match;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+
+                // Skip any trailing * characters in pattern
+                while (patternIndex < pattern.Length && pattern[patternIndex] == '*')
+                    patternIndex++;
+
+                return patternIndex == pattern.Length;
+            }
+        }
         // --- Main Handler ---
 
         public static object HandleCommand(JObject @params)
@@ -1133,7 +1219,34 @@ namespace UnityMcpBridge.Editor.Tools
                             .GetComponentsInChildren<Transform>(searchInactive)
                             .Select(t => t.gameObject)
                         : GetAllSceneObjects(searchInactive);
-                    results.AddRange(searchPoolName.Where(go => go.name == searchTerm));
+                    
+                    // Get search options from findParams
+                    bool caseSensitive = findParams?["caseSensitive"]?.ToObject<bool>() ?? false;
+                    bool exactMatch = findParams?["exactMatch"]?.ToObject<bool>() ?? false;
+                    
+                    if (exactMatch)
+                    {
+                        // Force exact matching behavior
+                        var comparison = caseSensitive 
+                            ? StringComparison.Ordinal 
+                            : StringComparison.OrdinalIgnoreCase;
+                        results.AddRange(searchPoolName
+                            .Where(go => string.Equals(go.name, searchTerm, comparison)));
+                    }
+                    else
+                    {
+                        // Default: Smart wildcard search
+                        // If no wildcards are present, automatically add * for flexible matching
+                        string searchPattern = searchTerm;
+                        if (!WildcardSearchHelper.IsWildcardPattern(searchTerm))
+                        {
+                            // Automatically make it a wildcard pattern for more flexible searching
+                            searchPattern = "*" + searchTerm + "*";
+                        }
+                        
+                        results.AddRange(searchPoolName
+                            .Where(go => WildcardSearchHelper.Match(go.name, searchPattern, caseSensitive)));
+                    }
                     break;
                 case "by_path":
                     // Path is relative to scene root or rootSearchObject
